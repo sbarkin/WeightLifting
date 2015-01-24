@@ -1,0 +1,90 @@
+---
+title: "WeightLifting"
+author: "Steven Barkin"
+date: "January 24, 2015"
+output: html_document
+---
+
+First, we load the necessary R packages, and both the training and testing data sets
+
+```{r}
+require(caret)
+require(randomForest)
+require(rpart)
+require(Hmisc)
+origTrainingData = read.csv("pml-training.csv",  header=TRUE, sep = ",")
+origTestingData = read.csv("pml-testing.csv", header=TRUE, sep = ",")
+
+```
+Now we remove a wide range of columns that only appear in a few rows, and which are not present (NA) in the 
+test set at all.  We also remove timestamp and window information, plus user ID and variable "X"
+
+```{r}
+# Remove aggregate columns from both training and testing set, because these are NA on most observations
+# in training set and all observations in testing set
+# Also remove timestamp and window information, user ID and X
+grepstring = "timestamp|window|kurtosis|skewness|max|min|amplitude|var|avg|stddev"
+trainingData = subset(origTrainingData, 
+                      select = -c(X, user_name,
+                                  grep(grepstring,
+                                       colnames(origTrainingData))
+                                  ) )
+testingData = subset(origTestingData, 
+                      select = -c(X, user_name,
+                                  grep(grepstring,
+                                       colnames(origTestingData))
+                      ) )
+```
+
+
+Now we split the training data into training & validation sets, using one of the functions in caret.
+We will use the former for building the model, and the latter for cross-validation.
+We also view the distribution of the dependent variable "classe" in each of these sets to ensure
+that the distributions are comparable across these two sets.
+```{r}
+# Split training data into training & validation sets
+
+inTrain = createDataPartition(y=trainingData$classe, p = 0.75, list = FALSE)
+
+trainingSet = trainingData[inTrain,]
+validationSet = trainingData[-inTrain,]
+
+describe(trainingSet$classe)
+describe(validationSet$classe)
+```
+
+First, we try method "rpart", a tree method.  We find that it generates an accuracy of approximately
+75% on both the training and validation sets.  A respectable level of accuracy, but perhaps we can do better.
+```{r}
+# Run CART model to predict classe based on training set, measure performance on test set
+set.seed(2400)
+
+modelFit1 = rpart(classe ~ ., data = trainingSet, method = "class")
+# modelFit1 = train(classe ~ ., data = trainingSet, method = "rpart")   Runs too slowly
+print(modelFit1)
+
+# fancyRpartPlot(modelFit1)   Disabled because font too small on screen
+
+pred1Train = predict(modelFit1, type = "class")
+pred1Validation = predict(modelFit1, newdata = validationSet, type = "class")
+pred1Test = predict(modelFit1, newdata = testingData, type = "class")
+
+confusionMatrix(pred1Train, trainingSet$classe)
+confusionMatrix(pred1Validation, validationSet$classe)
+```
+
+Now we try random forest, and get over 99% accuracy on both the training and validation sets.  So we choose this model and "call it a day", as this is more than sufficient "out of sample" accuracy.
+```{r}
+# Run Random Forest model
+#modelFit2 = train(classe ~ ., data = trainingSet, method = "rf")  Runs too slowly
+modelFit2 = randomForest(classe ~ ., data = trainingSet)
+print(modelFit2)
+
+
+pred2Train = predict(modelFit2, type = "class")
+pred2Validation = predict(modelFit2, newdata = validationSet, type = "class")
+pred2Test = predict(modelFit2, newdata = testingData, type = "class")
+
+confusionMatrix(pred2Train, trainingSet$classe)
+confusionMatrix(pred2Validation, validationSet$classe)
+```
